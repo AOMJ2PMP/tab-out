@@ -1,6 +1,6 @@
-# Chrome Web Store Listing. Tab Out
+# Chrome Web Store Listing: Tab Out
 
-Everything below is ready to copy-paste into the Chrome Web Store Developer Dashboard.
+Copy-paste ready for the Chrome Web Store Developer Dashboard.
 
 ---
 
@@ -14,54 +14,63 @@ Tab Out
 
 ## Summary
 
-*(132 characters max. this appears as the one-line description in search results)*
+*(132 characters max)*
 
 ```
 Keep tabs on your tabs. AI-powered new tab page that groups your open tabs into missions and lets you close them with style.
 ```
 
-*(124 characters. within the limit)*
-
 ---
 
 ## Description
 
-*(Paste this into the "Detailed description" field. Plain text only. no markdown.)*
+*(Paste into the "Detailed description" field. Plain text only, no markdown.)*
 
 ```
-Tab Out replaces your new tab page with a living dashboard of everything you have open. Instead of a sea of identical browser tabs, Tab Out groups them into Missions. named clusters that give your chaos a shape.
+Tab Out replaces your new tab page with a dashboard of everything you have open. Instead of squinting at 30 tiny tab titles, you see your tabs organized into clear groups you can act on.
 
 KEY FEATURES
 
-Mission Mode (AI-powered)
-Tab Out talks to a local AI server on your machine. Tell it your focus. "deep work on the investor deck" or "quick research on Tokyo restaurants". and it will sort your open tabs into named missions using AI. Click a mission to jump to it. Close a whole mission when you're done.
+AI-Powered Missions
+Click "Organize with AI" and Tab Out clusters your open tabs into named missions like "Researching Voice AI" or "Setting up Stripe Billing." It even writes you a witty one-liner about your browsing habits. Results are cached, so it's instant next time if your tabs haven't changed.
 
 Domain Grouping (no AI required)
-Not in the mood for AI? One click groups your tabs by domain. all GitHub tabs together, all Notion tabs together, all that YouTube rabbit hole neatly labeled.
+By default, tabs are grouped by domain instantly with zero AI cost. All your GitHub tabs together, all your Google Docs together, everything visible at a glance.
 
-Duplicate Tab Cleanup
-Tab Out scans for duplicate tabs and highlights them so you can close them instantly. One click, gone.
+Close Tabs with Style
+Hit "Close all" on any group and your tabs disappear with a satisfying swoosh sound and confetti burst. Cleaning up your browser has never felt this good.
 
-Swoosh + Confetti
-When you close a mission, a satisfying swoosh sound plays and confetti explodes across the screen. Closing things should feel good.
+Close Individual Tabs
+Hover over any tab title and click the X to close just that one tab without affecting the rest.
 
-Click to Focus
-Every tab in the dashboard is clickable. Click a tab title to jump to that tab immediately.
+Duplicate Detection
+Tab Out flags when you have the same page open in multiple tabs. One click to close the extras and keep one copy.
 
-IMPORTANT: LOCAL SERVER REQUIRED
+Click to Jump
+Click any tab title to switch directly to that tab. No new tab opened, just instant focus.
 
-Tab Out works with a companion local server that runs on your own computer. This is what enables the AI features. your tabs never leave your machine and are never sent to a third-party service. The server must be running in the background for AI grouping to work; domain grouping and the rest of the dashboard work without it.
+Custom Rules
+Teach the AI your preferences in plain English. Examples: "Group GitHub tabs by repo" or "Call all social media tabs Doom Scrolling."
 
-Setup instructions and the server code are open source and free:
+Works with Any AI Provider
+DeepSeek (cheapest), OpenAI, Grok, Gemini, Claude, Kimi, and more. You choose your provider and model. You can even run it fully locally with Ollama for free.
+
+SETUP
+
+Tab Out requires a small companion server running on your computer. This is what powers the AI features. Your browsing data never leaves your machine.
+
+The easiest way to set up: send this link to your coding agent (Claude Code, Cursor, etc.) and say "install this":
 https://github.com/zarazhangrui/tab-out
+
+Or follow the manual setup instructions on the GitHub page.
 
 PRIVACY
 
-Tab Out does not collect, transmit, or store any browsing data on external servers. All AI processing runs locally via your own OpenAI API key, which you control. The extension requires only the "tabs" permission to read your open tab titles and URLs.
+Tab Out does not collect, transmit, or store any browsing data on external servers. The only data sent anywhere is tab titles and URLs to your chosen AI provider when you click "Organize with AI." The extension only requires the "tabs" permission.
 
-FREE & OPEN SOURCE
+FREE AND OPEN SOURCE
 
-Tab Out is free to use. The source code is available on GitHub under the MIT license.
+Tab Out is completely free. Source code is on GitHub under the MIT license.
 ```
 
 ---
@@ -82,42 +91,28 @@ English
 
 ---
 
-## Screenshots (what to capture)
+## Screenshots
 
 The Chrome Web Store requires at least 1 screenshot (1280x800 or 640x400 px).
-Suggested shots:
 
-1. **Mission view**. the main dashboard showing tabs grouped into named missions
-2. **AI grouping in action**. the input box with a focus query typed in
-3. **Domain grouping**. tabs neatly sorted by website
-4. **Confetti moment**. the celebration screen after closing a mission
+Suggested shots:
+1. The dashboard showing tabs grouped into named AI missions
+2. The static domain-grouped view with the "Organize with AI" button
+3. A confetti moment after closing a mission
 
 To take a screenshot at exactly 1280x800:
-- Open a new tab (Tab Out will load)
-- Open Chrome DevTools (Cmd+Option+I)
+- Open a new tab (Tab Out loads)
+- Open DevTools (Cmd+Option+I)
 - Click the device toolbar icon (Cmd+Shift+M)
 - Set dimensions to 1280 x 800
-- Take a screenshot: three-dot menu in DevTools > "Capture screenshot"
+- Three-dot menu in DevTools > "Capture screenshot"
 
 ---
 
-## Promotional Images (optional but recommended)
+## Developer Notes (not published)
 
-- Small promo tile: 440x280 px
-- Large promo tile: 920x680 px
-- Marquee promo tile: 1400x560 px
-
-These appear on the Chrome Web Store listing page. A simple design with the
-icon on the left and the tagline "Keep tabs on your tabs." on a warm amber
-background would match the extension's aesthetic.
-
----
-
-## Developer Notes (not published. for your reference)
-
-Before submitting, make sure you have:
-- [ ] Replaced `[your-github-username]` in the description with your actual GitHub username
-- [ ] Uploaded `extension.zip` (generated by `npm run package-extension`)
-- [ ] Added at least 1 screenshot at 1280x800 or 640x400
-- [ ] Uploaded `extension/icons/icon128.png` as the store icon (128x128)
-- [ ] Set visibility to "Public" when ready to publish
+Before submitting:
+- [ ] Upload `extension.zip` (run `npm run package-extension`)
+- [ ] Add at least 1 screenshot at 1280x800 or 640x400
+- [ ] Upload `extension/icons/icon128.png` as the store icon
+- [ ] Set visibility to "Public" when ready
