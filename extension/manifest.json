@@ -1,13 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Tab Out",
+  "name": "Next Up",
   "version": "1.0.0",
-  "description": "Keep tabs on your tabs. New tab page that groups your open tabs by domain and lets you close them with style.",
+  "description": "Your visual action inbox. Capture screenshots, write action steps, and track progress — all in your new tab.",
   "permissions": ["tabs", "activeTab", "storage", "scripting"],
   "chrome_url_overrides": { "newtab": "index.html" },
   "background": { "service_worker": "background.js" },
   "action": {
-    "default_title": "Tab Out",
+    "default_title": "Next Up",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

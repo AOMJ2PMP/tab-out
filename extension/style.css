@@ -1751,6 +1751,16 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   cursor: pointer;
 }
 
+/* Skip all animations when returning from editor */
+body.no-animate *,
+body.no-animate *::before,
+body.no-animate *::after {
+  animation: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition: none !important;
+}
+
 .vcard:hover {
   box-shadow: 0 4px 20px var(--shadow);
   transform: translateY(-1px);
