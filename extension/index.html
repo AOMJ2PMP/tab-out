@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tab Out</title>
 
-  <!-- Google Fonts: Newsreader (for headings/numbers) + DM Sans (for body text) -->
+  <!-- Google Fonts: Fraunces (serif) + SN Pro (sans-serif) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=SN+Pro:wght@300;400;500;600&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="style.css">
 </head>
@@ -48,68 +48,51 @@
 
   <!-- ================================================================
        MAIN CONTENT AREA — two-column layout
-       Left: open tabs (domain/mission cards)
-       Right: saved for later checklist
-       The right column only renders when it has items (JS controls this)
+       Left: visual action cards (saved via popup)
+       Right: intention filter / navigation
        ================================================================ -->
-  <div class="dashboard-columns" id="dashboardColumns">
+  <!-- Intention filter tabs + Visual cards (single column) -->
+  <div class="cards-section" id="cardsSection">
 
-    <!-- LEFT COLUMN: Open tabs -->
-    <div class="active-section" id="openTabsSection" style="display:none">
-      <div class="section-header">
-        <h2 id="openTabsSectionTitle">Right now</h2>
-        <div class="section-line"></div>
-        <div class="section-count" id="openTabsSectionCount"></div>
-      </div>
-      <div class="missions" id="openTabsMissions"></div>
+    <!-- Intention filter bar -->
+    <div class="intention-nav" id="intentionNav">
+      <div class="intention-nav-list" id="intentionNavList"></div>
+      <button class="intention-nav-settings" data-action="open-intention-settings" title="Edit intentions">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+      </button>
     </div>
 
-    <!-- RIGHT COLUMN: Saved for Later checklist -->
-    <div class="deferred-column" id="deferredColumn" style="display:none">
-      <div class="section-header">
-        <h2>Saved for later</h2>
-        <div class="section-line"></div>
-        <div class="section-count" id="deferredCount"></div>
+    <!-- Empty state -->
+    <div class="cards-empty" id="cardsEmpty">
+      <div class="cards-empty-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1" stroke="currentColor" style="width:48px;height:48px;color:var(--warm-gray)">
+          <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+        </svg>
       </div>
-
-      <!-- Active checklist items — injected by renderDeferredList() in app.js -->
-      <div class="deferred-list" id="deferredList"></div>
-
-      <!-- Empty state — shown when no active deferred tabs -->
-      <div class="deferred-empty" id="deferredEmpty" style="display:none">
-        Nothing saved. Living in the moment.
-      </div>
-
-      <!-- Archive section — collapsed by default -->
-      <div class="deferred-archive" id="deferredArchive" style="display:none">
-        <button class="archive-toggle" id="archiveToggle">
-          <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
-          Archive
-          <span class="archive-count" id="archiveCount"></span>
-        </button>
-        <div class="archive-body" id="archiveBody" style="display:none">
-          <input type="text" class="archive-search" id="archiveSearch" placeholder="Search archived tabs...">
-          <div class="archive-list" id="archiveList"></div>
-        </div>
-      </div>
+      <div class="cards-empty-title">No cards yet</div>
+      <div class="cards-empty-sub">Click the Tab Out icon on any page to capture and save it here.</div>
     </div>
 
-  </div><!-- end .dashboard-columns -->
+    <!-- Card grid -->
+    <div class="cards-grid" id="cardsGrid"></div>
+
+  </div>
 
   <!-- ================================================================
-       FOOTER — global stats + refresh control
+       OPEN TABS — collapsible section below the main content
        ================================================================ -->
-  <footer>
-    <div class="footer-stats">
-      <div class="stat">
-        <div class="stat-num" id="statTabs">—</div>
-        <div class="stat-label">Open tabs</div>
-      </div>
+  <div class="open-tabs-collapsible" id="openTabsCollapsible">
+    <button class="open-tabs-toggle" id="openTabsToggle">
+      <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+      <span id="openTabsToggleLabel">Open tabs</span>
+      <span class="open-tabs-toggle-count" id="openTabsToggleCount"></span>
+    </button>
+    <div class="open-tabs-body" id="openTabsBody" style="display:none">
+      <div class="missions" id="openTabsMissions"></div>
     </div>
-    <div class="last-refresh">
-      <span style="color: var(--muted); font-size: 11px;"><a href="https://github.com/zarazhangrui/tab-out" target="_top" style="color: var(--muted); text-decoration: underline; text-underline-offset: 2px;">Tab Out</a> by <a href="https://x.com/zarazhangrui" target="_top" style="color: var(--muted); text-decoration: underline; text-underline-offset: 2px;">Zara</a></span>
-    </div>
-  </footer>
+  </div>
+
+  <!-- Footer removed -->
 
 </div><!-- end .container -->
 
@@ -125,9 +108,116 @@
   <span id="toastText"></span>
 </div>
 
+<!-- ================================================================
+     PASTE CARD MODAL — appears on Cmd+V with image in clipboard
+     ================================================================ -->
+<div class="modal-overlay" id="pasteCardModal" style="display:none">
+  <div class="modal paste-modal">
+    <div class="modal-header">
+      <h3>New card</h3>
+      <button class="modal-close" data-action="close-paste-modal">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="paste-preview">
+        <img id="pastePreviewImg" src="" alt="Pasted image">
+        <button class="screenshot-remove" id="pasteRemoveImg" title="Remove image">✕</button>
+      </div>
+      <div class="paste-field">
+        <label class="paste-label">What's the action?</label>
+        <input type="text" class="paste-input" id="pasteActionStep" placeholder="e.g. Recreate this layout in Figma">
+      </div>
+      <div class="paste-field">
+        <label class="paste-label">Link (optional)</label>
+        <input type="url" class="paste-input" id="pasteUrl" placeholder="https://...">
+      </div>
+      <div class="paste-field">
+        <label class="paste-label">Save to</label>
+        <div class="paste-intentions" id="pasteIntentions"></div>
+        <div class="paste-add-intention">
+          <input type="text" id="pasteNewEmoji" placeholder="📌" maxlength="8" class="paste-add-emoji">
+          <input type="text" id="pasteNewLabel" placeholder="New intention..." class="paste-add-label">
+          <button class="paste-add-btn" id="pasteAddIntentionBtn">+</button>
+        </div>
+      </div>
+      <button class="paste-save-btn" id="pasteSaveBtn">Save card</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     GLOBAL INTENTION PICKER — positioned via JS, shared by all triggers
+     ================================================================ -->
+<div class="global-intention-picker" id="globalIntentionPicker" style="display:none">
+  <div class="intention-picker-options" id="globalPickerOptions"></div>
+  <div class="intention-picker-add">
+    <input type="text" id="globalPickerNewEmoji" placeholder="😊" maxlength="2" class="picker-new-emoji">
+    <input type="text" id="globalPickerNewLabel" placeholder="New tag..." class="picker-new-label">
+    <button class="picker-new-btn" data-action="picker-add-intention">+</button>
+  </div>
+</div>
+
+<!-- ================================================================
+     INTENTION SETTINGS MODAL
+     ================================================================ -->
+<div class="modal-overlay" id="intentionModal" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Edit categories</h3>
+      <button class="modal-close" data-action="close-intention-modal">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="intention-list-edit" id="intentionListEdit"></div>
+      <div class="intention-add-form">
+        <input type="text" id="newIntentionEmoji" placeholder="😊" maxlength="2" class="intention-emoji-input">
+        <input type="text" id="newIntentionLabel" placeholder="New category name..." class="intention-label-input">
+        <button class="action-btn" data-action="add-intention" style="flex-shrink:0">Add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================
+     CARD EDITOR — WYSIWYG, centered card with blur backdrop
+     ================================================================ -->
+<div class="editor-overlay" id="editorOverlay" style="display:none">
+  <div class="editor-panel">
+    <!-- Title -->
+    <div class="editor-title-row">
+      <div class="editor-title" id="editorTitle" contenteditable="true" data-placeholder="Untitled"></div>
+      <button class="editor-close" id="editorClose" title="Close (Esc)">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div class="editor-meta-row">
+      <span class="editor-intention-badge" id="editorIntention"></span>
+      <a class="editor-url" id="editorUrl" href="#" target="_blank" rel="noopener"></a>
+      <span class="editor-save-status" id="editorSaveStatus"></span>
+    </div>
+
+    <!-- WYSIWYG content area -->
+    <div class="editor-body">
+      <div class="editor-content" id="editorContent" contenteditable="true" data-placeholder="Start writing..."></div>
+    </div>
+
+    <!-- Footer -->
+    <div class="editor-footer">
+      <img class="editor-favicon" id="editorFavicon" src="" alt="">
+      <span class="editor-domain" id="editorDomain"></span>
+      <span class="editor-ago" id="editorAgo"></span>
+    </div>
+  </div>
+</div>
+
 <!-- Personal config (gitignored) — defines LOCAL_LANDING_PAGE_PATTERNS etc. -->
 <!-- If the file doesn't exist, that's fine — app.js uses sensible defaults. -->
 <script src="config.local.js" onerror="/* no personal config, that's fine */"></script>
+
+<!-- Markdown parser -->
+<script src="marked.min.js"></script>
 
 <!-- Main dashboard logic — loads last so the DOM is ready -->
 <script src="app.js"></script>

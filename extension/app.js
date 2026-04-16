@@ -199,6 +199,88 @@ async function closeTabOutDupes() {
 
 
 /* ----------------------------------------------------------------
+   INTENTIONS — Custom user-defined categories
+
+   Users can create intentions like "To Practice", "Read Later",
+   "Deep Dive", etc. Tabs saved with an intention are grouped
+   under that intention on the dashboard. Tabs saved without an
+   intention go to the general "Saved for Later" list.
+
+   Data shape stored under the "intentions" key:
+   [
+     { id: "practice",   label: "To Practice",    emoji: "🔧", order: 0 },
+     { id: "read-later", label: "Read Later",     emoji: "📖", order: 1 },
+     { id: "deep-dive",  label: "Deep Dive",      emoji: "🧘", order: 2 },
+     { id: "casual",     label: "Just Browsing",  emoji: "👀", order: 3 },
+   ]
+   ---------------------------------------------------------------- */
+
+const DEFAULT_INTENTIONS = [
+  { id: 'practice',   label: 'To Practice',   emoji: '🔧', order: 0 },
+  { id: 'read-later', label: 'Read Later',    emoji: '📖', order: 1 },
+  { id: 'deep-dive',  label: 'Deep Dive',     emoji: '🧘', order: 2 },
+  { id: 'casual',     label: 'Just Browsing', emoji: '👀', order: 3 },
+];
+
+/**
+ * getIntentions()
+ *
+ * Returns user's intention categories. Seeds defaults on first use.
+ */
+async function getIntentions() {
+  const { intentions } = await chrome.storage.local.get('intentions');
+  if (!intentions || intentions.length === 0) {
+    await chrome.storage.local.set({ intentions: DEFAULT_INTENTIONS });
+    return DEFAULT_INTENTIONS;
+  }
+  return intentions.sort((a, b) => a.order - b.order);
+}
+
+/**
+ * saveIntentions(intentions)
+ *
+ * Persists the full intentions array.
+ */
+async function saveIntentions(intentions) {
+  await chrome.storage.local.set({ intentions });
+}
+
+/**
+ * addIntention({ label, emoji })
+ *
+ * Adds a new intention. ID is auto-generated from label.
+ */
+async function addIntention({ label, emoji }) {
+  const intentions = await getIntentions();
+  const id = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const order = intentions.length;
+  intentions.push({ id, label, emoji, order });
+  await saveIntentions(intentions);
+  return intentions;
+}
+
+/**
+ * removeIntention(id)
+ *
+ * Removes an intention. Tabs with that intention become untagged.
+ */
+async function removeIntention(id) {
+  let intentions = await getIntentions();
+  intentions = intentions.filter(i => i.id !== id);
+  // Re-order
+  intentions.forEach((i, idx) => i.order = idx);
+  await saveIntentions(intentions);
+  // Clear intentionId from any saved tabs that had this intention
+  const { deferred = [] } = await chrome.storage.local.get('deferred');
+  for (const item of deferred) {
+    if (item.intentionId === id) item.intentionId = null;
+  }
+  await chrome.storage.local.set({ deferred });
+  return intentions;
+}
+
+
+/* ----------------------------------------------------------------
    SAVED FOR LATER — chrome.storage.local
 
    Replaces the old server-side SQLite + REST API with Chrome's
@@ -213,27 +295,30 @@ async function closeTabOutDupes() {
        title: "Example Page",
        savedAt: "2026-04-04T10:00:00.000Z",  // ISO date string
        completed: false,             // true = checked off (archived)
-       dismissed: false              // true = dismissed without reading
+       dismissed: false,             // true = dismissed without reading
+       intentionId: "deep-dive"      // optional — null = general "Saved for Later"
      },
      ...
    ]
    ---------------------------------------------------------------- */
 
 /**
- * saveTabForLater(tab)
+ * saveTabForLater(tab, intentionId)
  *
  * Saves a single tab to the "Saved for Later" list in chrome.storage.local.
  * @param {{ url: string, title: string }} tab
+ * @param {string|null} intentionId — optional intention category
  */
-async function saveTabForLater(tab) {
+async function saveTabForLater(tab, intentionId = null) {
   const { deferred = [] } = await chrome.storage.local.get('deferred');
   deferred.push({
-    id:        Date.now().toString(),
-    url:       tab.url,
-    title:     tab.title,
-    savedAt:   new Date().toISOString(),
-    completed: false,
-    dismissed: false,
+    id:           Date.now().toString(),
+    url:          tab.url,
+    title:        tab.title,
+    savedAt:      new Date().toISOString(),
+    completed:    false,
+    dismissed:    false,
+    intentionId:  intentionId || null,
   });
   await chrome.storage.local.set({ deferred });
 }
@@ -252,6 +337,21 @@ async function getSavedTabs() {
     active:   visible.filter(t => !t.completed),
     archived: visible.filter(t => t.completed),
   };
+}
+
+/**
+ * setTabIntention(tabId, intentionId)
+ *
+ * Assigns or changes the intention on a saved tab.
+ * Pass null to move it back to general "Saved for Later".
+ */
+async function setTabIntention(tabId, intentionId) {
+  const { deferred = [] } = await chrome.storage.local.get('deferred');
+  const tab = deferred.find(t => t.id === tabId);
+  if (tab) {
+    tab.intentionId = intentionId || null;
+    await chrome.storage.local.set({ deferred });
+  }
 }
 
 /**
@@ -772,6 +872,9 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
       ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
       <div class="chip-actions">
+        <button class="chip-action chip-tag" data-action="open-chip-intention-picker" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save with tag">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" /></svg>
+        </button>
         <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
@@ -853,6 +956,9 @@ function renderDomainCard(group) {
       ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
       <div class="chip-actions">
+        <button class="chip-action chip-tag" data-action="open-chip-intention-picker" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save with tag">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z" /></svg>
+        </button>
         <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
@@ -905,22 +1011,17 @@ function renderDomainCard(group) {
  * renderDeferredColumn()
  *
  * Reads saved tabs from chrome.storage.local and renders the right-side
- * "Saved for Later" checklist column. Shows active items as a checklist
- * and completed items in a collapsible archive.
+ * column. Tabs with intentions are grouped under intention headers.
+ * Tabs without intentions go under "Saved for Later".
+ * Completed items go to a collapsible archive.
  */
 async function renderDeferredColumn() {
-  const column         = document.getElementById('deferredColumn');
-  const list           = document.getElementById('deferredList');
-  const empty          = document.getElementById('deferredEmpty');
-  const countEl        = document.getElementById('deferredCount');
-  const archiveEl      = document.getElementById('deferredArchive');
-  const archiveCountEl = document.getElementById('archiveCount');
-  const archiveList    = document.getElementById('archiveList');
-
+  const column = document.getElementById('deferredColumn');
   if (!column) return;
 
   try {
     const { active, archived } = await getSavedTabs();
+    const intentions = await getIntentions();
 
     // Hide the entire column if there's nothing to show
     if (active.length === 0 && archived.length === 0) {
@@ -930,26 +1031,94 @@ async function renderDeferredColumn() {
 
     column.style.display = 'block';
 
-    // Render active checklist items
-    if (active.length > 0) {
-      countEl.textContent = `${active.length} item${active.length !== 1 ? 's' : ''}`;
-      list.innerHTML = active.map(item => renderDeferredItem(item)).join('');
-      list.style.display = 'block';
-      empty.style.display = 'none';
-    } else {
-      list.style.display = 'none';
-      countEl.textContent = '';
-      empty.style.display = 'block';
+    // Group active items by intentionId
+    const intentionTabs = {};   // intentionId -> [items]
+    const generalTabs = [];     // items with no intention
+
+    for (const item of active) {
+      if (item.intentionId) {
+        if (!intentionTabs[item.intentionId]) intentionTabs[item.intentionId] = [];
+        intentionTabs[item.intentionId].push(item);
+      } else {
+        generalTabs.push(item);
+      }
     }
 
-    // Render archive section
-    if (archived.length > 0) {
-      archiveCountEl.textContent = `(${archived.length})`;
-      archiveList.innerHTML = archived.map(item => renderArchiveItem(item)).join('');
-      archiveEl.style.display = 'block';
-    } else {
-      archiveEl.style.display = 'none';
+    // Build the column HTML
+    let html = '';
+
+    // Render intention sections (in order)
+    for (const intention of intentions) {
+      const items = intentionTabs[intention.id];
+      if (!items || items.length === 0) continue;
+
+      html += `
+        <div class="intention-section" data-intention-id="${intention.id}">
+          <div class="section-header intention-header">
+            <h2>${intention.emoji} ${intention.label}</h2>
+            <div class="section-line"></div>
+            <div class="section-count">${items.length} item${items.length !== 1 ? 's' : ''}</div>
+          </div>
+          <div class="deferred-list">
+            ${items.map(item => renderDeferredItem(item, intentions)).join('')}
+          </div>
+        </div>`;
     }
+
+    // Render general "Saved for Later" section
+    if (generalTabs.length > 0) {
+      html += `
+        <div class="intention-section" data-intention-id="">
+          <div class="section-header">
+            <h2>Saved for later</h2>
+            <div class="section-line"></div>
+            <div class="section-count">${generalTabs.length} item${generalTabs.length !== 1 ? 's' : ''}</div>
+          </div>
+          <div class="deferred-list">
+            ${generalTabs.map(item => renderDeferredItem(item, intentions)).join('')}
+          </div>
+        </div>`;
+    }
+
+    // Empty state (no active items at all)
+    if (active.length === 0) {
+      html += `
+        <div class="section-header">
+          <h2>Saved for later</h2>
+          <div class="section-line"></div>
+        </div>
+        <div class="deferred-empty">Nothing saved. Living in the moment.</div>`;
+    }
+
+    // Archive section
+    if (archived.length > 0) {
+      html += `
+        <div class="deferred-archive" id="deferredArchive">
+          <button class="archive-toggle" id="archiveToggle">
+            <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
+            Archive
+            <span class="archive-count" id="archiveCount">(${archived.length})</span>
+          </button>
+          <div class="archive-body" id="archiveBody" style="display:none">
+            <input type="text" class="archive-search" id="archiveSearch" placeholder="Search archived tabs...">
+            <div class="archive-list" id="archiveList">
+              ${archived.map(item => renderArchiveItem(item)).join('')}
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // Settings button at the bottom
+    html += `
+      <div class="intention-settings-trigger">
+        <button class="action-btn" data-action="open-intention-settings" style="font-size:11px;width:100%;justify-content:center;margin-top:12px;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:14px;height:14px"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+          Edit categories
+        </button>
+      </div>`;
+
+    // Replace column inner HTML (keep the column wrapper)
+    column.innerHTML = html;
 
   } catch (err) {
     console.warn('[tab-out] Could not load saved tabs:', err);
@@ -958,16 +1127,22 @@ async function renderDeferredColumn() {
 }
 
 /**
- * renderDeferredItem(item)
+ * renderDeferredItem(item, intentions)
  *
  * Builds HTML for one active checklist item: checkbox, title link,
- * domain, time ago, dismiss button.
+ * domain, time ago, intention tag, dismiss button.
  */
-function renderDeferredItem(item) {
+function renderDeferredItem(item, intentions = []) {
   let domain = '';
   try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch {}
   const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
   const ago = timeAgo(item.savedAt);
+
+  // Current intention tag (if any)
+  const currentIntention = intentions.find(i => i.id === item.intentionId);
+  const intentionTag = currentIntention
+    ? `<span class="intention-tag" data-action="toggle-intention-picker" data-deferred-id="${item.id}" title="Change category">${currentIntention.emoji} ${currentIntention.label}</span>`
+    : `<span class="intention-tag intention-tag-empty" data-action="toggle-intention-picker" data-deferred-id="${item.id}" title="Assign category">+ tag</span>`;
 
   return `
     <div class="deferred-item" data-deferred-id="${item.id}">
@@ -979,6 +1154,7 @@ function renderDeferredItem(item) {
         <div class="deferred-meta">
           <span>${domain}</span>
           <span>${ago}</span>
+          ${intentionTag}
         </div>
       </div>
       <button class="deferred-dismiss" data-action="dismiss-deferred" data-deferred-id="${item.id}" title="Dismiss">
@@ -1142,19 +1318,19 @@ async function renderStaticDashboard() {
     return b.tabs.length - a.tabs.length;
   });
 
-  // --- Render domain cards ---
-  const openTabsSection      = document.getElementById('openTabsSection');
-  const openTabsMissionsEl   = document.getElementById('openTabsMissions');
-  const openTabsSectionCount = document.getElementById('openTabsSectionCount');
-  const openTabsSectionTitle = document.getElementById('openTabsSectionTitle');
+  // --- Render domain cards into collapsible open-tabs section ---
+  const openTabsMissionsEl = document.getElementById('openTabsMissions');
+  const openTabsToggleCount = document.getElementById('openTabsToggleCount');
+  const openTabsCollapsible = document.getElementById('openTabsCollapsible');
 
-  if (domainGroups.length > 0 && openTabsSection) {
-    if (openTabsSectionTitle) openTabsSectionTitle.textContent = 'Open tabs';
-    openTabsSectionCount.innerHTML = `${domainGroups.length} domain${domainGroups.length !== 1 ? 's' : ''} &nbsp;&middot;&nbsp; <button class="action-btn close-tabs" data-action="close-all-open-tabs" style="font-size:11px;padding:3px 10px;">${ICONS.close} Close all ${realTabs.length} tabs</button>`;
+  if (domainGroups.length > 0 && openTabsMissionsEl) {
     openTabsMissionsEl.innerHTML = domainGroups.map(g => renderDomainCard(g)).join('');
-    openTabsSection.style.display = 'block';
-  } else if (openTabsSection) {
-    openTabsSection.style.display = 'none';
+    if (openTabsToggleCount) {
+      openTabsToggleCount.textContent = `${realTabs.length} tab${realTabs.length !== 1 ? 's' : ''} · ${domainGroups.length} domain${domainGroups.length !== 1 ? 's' : ''}`;
+    }
+    if (openTabsCollapsible) openTabsCollapsible.style.display = 'block';
+  } else if (openTabsCollapsible) {
+    openTabsCollapsible.style.display = 'none';
   }
 
   // --- Footer stats ---
@@ -1163,13 +1339,264 @@ async function renderStaticDashboard() {
 
   // --- Check for duplicate Tab Out tabs ---
   checkTabOutDupes();
-
-  // --- Render "Saved for Later" column ---
-  await renderDeferredColumn();
 }
 
 async function renderDashboard() {
   await renderStaticDashboard();
+  await renderVisualCards();
+  await renderIntentionNav();
+}
+
+// Active intention filter — null means "All"
+let activeIntentionFilter = null;
+
+/* ----------------------------------------------------------------
+   VISUAL CARDS — Rich action cards in the left column
+   ---------------------------------------------------------------- */
+
+/**
+ * renderVisualCards(filter)
+ *
+ * Renders saved tabs as visual cards in the left column.
+ * If a filter is set, only shows cards matching that intentionId.
+ */
+async function renderVisualCards(filter) {
+  if (filter !== undefined) activeIntentionFilter = filter;
+
+  const grid      = document.getElementById('cardsGrid');
+  const emptyEl   = document.getElementById('cardsEmpty');
+  if (!grid) return;
+
+  const { active } = await getSavedTabs();
+  const intentions = await getIntentions();
+
+  // Apply filter
+  // Sort newest first
+  active.sort((a, b) => new Date(b.savedAt) - new Date(a.savedAt));
+
+  const filtered = activeIntentionFilter === null
+    ? active
+    : activeIntentionFilter === ''
+      ? active.filter(t => !t.intentionId)  // "Unsorted"
+      : active.filter(t => t.intentionId === activeIntentionFilter);
+
+  if (active.length === 0) {
+    grid.style.display = 'none';
+    emptyEl.style.display = 'flex';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  grid.style.display = 'grid';
+
+  grid.innerHTML = filtered.map(item => {
+    const intention = intentions.find(i => i.id === item.intentionId);
+    const intentionBadge = intention
+      ? `<span class="vcard-intention">${intention.emoji} ${intention.label}</span>`
+      : '';
+
+    let domain = '';
+    try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch {}
+    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+    const ago = timeAgo(item.savedAt);
+
+    // Screenshot or fallback
+    const imageHtml = item.screenshot
+      ? `<div class="vcard-image"><img src="${item.screenshot}" alt="" loading="lazy"></div>`
+      : `<div class="vcard-image vcard-image-placeholder">
+           ${faviconUrl ? `<img src="${faviconUrl}" alt="" style="width:24px;height:24px;opacity:0.4">` : ''}
+         </div>`;
+
+    // Action step or page title
+    const mainTitle = item.actionStep || item.title || item.url;
+
+    return `
+      <div class="vcard" data-card-id="${item.id}" data-action="open-editor">
+        ${imageHtml}
+        <div class="vcard-body">
+          <div class="vcard-step">${mainTitle}</div>
+          <div class="vcard-meta">
+            ${faviconUrl ? `<img src="${faviconUrl}" alt="" class="vcard-favicon">` : ''}
+            <span class="vcard-domain">${domain}</span>
+            <span class="vcard-ago">${ago}</span>
+            ${intentionBadge}
+          </div>
+        </div>
+        <div class="vcard-actions">
+          <a href="${item.url}" target="_blank" rel="noopener" class="vcard-open" title="Open">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 19.5 15-15m0 0H8.25m11.25 0v11.25" /></svg>
+          </a>
+          <button class="vcard-done" data-action="check-card" data-card-id="${item.id}" title="Done">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+          </button>
+          <button class="vcard-dismiss" data-action="dismiss-card" data-card-id="${item.id}" title="Dismiss">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Show a "no cards in this filter" state
+  if (filtered.length === 0 && active.length > 0) {
+    const label = activeIntentionFilter === ''
+      ? 'Unsorted'
+      : intentions.find(i => i.id === activeIntentionFilter)?.label || '';
+    grid.innerHTML = `<div class="cards-empty-filter">No cards in "${label}"</div>`;
+  }
+}
+
+
+/* ----------------------------------------------------------------
+   INTENTION NAV — Right sidebar filter
+   ---------------------------------------------------------------- */
+
+async function renderIntentionNav() {
+  const navList = document.getElementById('intentionNavList');
+  if (!navList) return;
+
+  const intentions = await getIntentions();
+  const { active } = await getSavedTabs();
+
+  // Count per intention
+  const counts = {};
+  let unsortedCount = 0;
+  for (const item of active) {
+    if (item.intentionId) {
+      counts[item.intentionId] = (counts[item.intentionId] || 0) + 1;
+    } else {
+      unsortedCount++;
+    }
+  }
+
+  let html = '';
+
+  // "All" filter
+  const allActive = activeIntentionFilter === null ? ' active' : '';
+  html += `<button class="intention-nav-item${allActive}" data-action="filter-intention" data-filter-id="__all__">
+    <span class="intention-nav-label">All</span>
+    <span class="intention-nav-count">${active.length}</span>
+  </button>`;
+
+  // Each intention
+  for (const i of intentions) {
+    const count = counts[i.id] || 0;
+    const isActive = activeIntentionFilter === i.id ? ' active' : '';
+    html += `<button class="intention-nav-item${isActive}" data-action="filter-intention" data-filter-id="${i.id}">
+      <span class="intention-nav-emoji">${i.emoji}</span>
+      <span class="intention-nav-label">${i.label}</span>
+      <span class="intention-nav-count">${count}</span>
+    </button>`;
+  }
+
+  // "Unsorted"
+  if (unsortedCount > 0) {
+    const unsortedActive = activeIntentionFilter === '' ? ' active' : '';
+    html += `<button class="intention-nav-item${unsortedActive}" data-action="filter-intention" data-filter-id="__unsorted__">
+      <span class="intention-nav-label" style="color:var(--muted)">Unsorted</span>
+      <span class="intention-nav-count">${unsortedCount}</span>
+    </button>`;
+  }
+
+  navList.innerHTML = html;
+}
+
+
+/* ----------------------------------------------------------------
+   GLOBAL INTENTION PICKER — shared floating panel
+   ---------------------------------------------------------------- */
+
+/**
+ * showGlobalPicker(triggerEl, opts)
+ *
+ * Positions the global picker next to the trigger element and
+ * populates it with intention options.
+ * opts.mode = 'open-tab' | 'saved-tab'
+ * opts.tabUrl, opts.tabTitle — for open-tab mode
+ * opts.deferredId — for saved-tab mode
+ */
+async function showGlobalPicker(triggerEl, opts) {
+  const picker = document.getElementById('globalIntentionPicker');
+  if (!picker) return;
+
+  // Store context on the picker element
+  picker.dataset.mode       = opts.mode;
+  picker.dataset.tabUrl     = opts.tabUrl || '';
+  picker.dataset.tabTitle   = opts.tabTitle || '';
+  picker.dataset.deferredId = opts.deferredId || '';
+
+  // Populate options
+  await populateGlobalPickerOptions(opts.mode, opts.deferredId);
+
+  // Position near the trigger
+  const rect = triggerEl.getBoundingClientRect();
+  picker.style.display = 'block';
+
+  // Default: below the trigger, aligned left
+  let top  = rect.bottom + 6;
+  let left = rect.left;
+
+  // If it would overflow right edge, align to right
+  const pickerWidth = picker.offsetWidth || 220;
+  if (left + pickerWidth > window.innerWidth - 16) {
+    left = window.innerWidth - pickerWidth - 16;
+  }
+
+  // If it would overflow bottom, show above
+  const pickerHeight = picker.offsetHeight || 200;
+  if (top + pickerHeight > window.innerHeight - 16) {
+    top = rect.top - pickerHeight - 6;
+  }
+
+  picker.style.top  = `${top}px`;
+  picker.style.left = `${left}px`;
+
+  // Focus the new-tag input for quick typing
+  setTimeout(() => {
+    const labelInput = document.getElementById('globalPickerNewLabel');
+    if (labelInput) labelInput.focus();
+  }, 50);
+}
+
+function hideGlobalPicker() {
+  const picker = document.getElementById('globalIntentionPicker');
+  if (picker) picker.style.display = 'none';
+}
+
+/**
+ * populateGlobalPickerOptions(mode, deferredId)
+ *
+ * Fills the picker with current intentions as clickable options.
+ */
+async function populateGlobalPickerOptions(mode, deferredId) {
+  const optionsEl = document.getElementById('globalPickerOptions');
+  if (!optionsEl) return;
+
+  const intentions = await getIntentions();
+
+  // For saved-tab mode, find the current intentionId
+  let currentIntentionId = null;
+  if (mode === 'saved-tab' && deferredId) {
+    const { deferred = [] } = await chrome.storage.local.get('deferred');
+    const item = deferred.find(t => t.id === deferredId);
+    if (item) currentIntentionId = item.intentionId;
+  }
+
+  let html = intentions.map(i => {
+    const selected = currentIntentionId === i.id ? ' selected' : '';
+    return `<div class="intention-option${selected}" data-action="pick-intention" data-intention-id="${i.id}">${i.emoji} ${i.label}</div>`;
+  }).join('');
+
+  // "Save without tag" option for open-tab mode
+  if (mode === 'open-tab') {
+    html += `<div class="intention-option intention-option-clear" data-action="pick-intention" data-intention-id="">📥 Save without tag</div>`;
+  }
+
+  // "Remove tag" for saved-tab mode with existing tag
+  if (mode === 'saved-tab' && currentIntentionId) {
+    html += `<div class="intention-option intention-option-clear" data-action="pick-intention" data-intention-id="">✕ Remove tag</div>`;
+  }
+
+  optionsEl.innerHTML = html;
 }
 
 
@@ -1412,6 +1839,220 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  // ---- Open card editor ----
+  if (action === 'open-editor') {
+    // Don't open editor if clicking on action buttons inside the card
+    if (e.target.closest('.vcard-actions') || e.target.closest('.vcard-open')) return;
+    const cardId = actionEl.dataset.cardId;
+    if (cardId) await openEditor(cardId);
+    return;
+  }
+
+  // ---- Filter by intention (right nav) ----
+  if (action === 'filter-intention') {
+    const filterId = actionEl.dataset.filterId;
+    if (filterId === '__all__') {
+      await renderVisualCards(null);
+    } else if (filterId === '__unsorted__') {
+      await renderVisualCards('');
+    } else {
+      await renderVisualCards(filterId);
+    }
+    await renderIntentionNav();
+    return;
+  }
+
+  // ---- Mark a visual card as done ----
+  if (action === 'check-card') {
+    e.stopPropagation();
+    const cardId = actionEl.dataset.cardId;
+    if (!cardId) return;
+    await checkOffSavedTab(cardId);
+    const card = actionEl.closest('.vcard');
+    if (card) {
+      const rect = card.getBoundingClientRect();
+      shootConfetti(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      card.style.transition = 'opacity 0.3s, transform 0.3s';
+      card.style.opacity = '0';
+      card.style.transform = 'scale(0.95)';
+      setTimeout(async () => {
+        await renderVisualCards();
+        await renderIntentionNav();
+      }, 300);
+    }
+    playCloseSound();
+    showToast('Done!');
+    return;
+  }
+
+  // ---- Dismiss a visual card ----
+  if (action === 'dismiss-card') {
+    e.stopPropagation();
+    const cardId = actionEl.dataset.cardId;
+    if (!cardId) return;
+    await dismissSavedTab(cardId);
+    const card = actionEl.closest('.vcard');
+    if (card) {
+      card.style.transition = 'opacity 0.2s, transform 0.2s';
+      card.style.opacity = '0';
+      card.style.transform = 'translateX(20px)';
+      setTimeout(async () => {
+        await renderVisualCards();
+        await renderIntentionNav();
+      }, 200);
+    }
+    showToast('Dismissed');
+    return;
+  }
+
+  // ---- Open intention picker from a LEFT-column chip (open tab) ----
+  if (action === 'open-chip-intention-picker') {
+    e.stopPropagation();
+    const tabUrl   = actionEl.dataset.tabUrl;
+    const tabTitle = actionEl.dataset.tabTitle || tabUrl;
+    if (!tabUrl) return;
+
+    await showGlobalPicker(actionEl, {
+      mode: 'open-tab',      // saving a currently-open tab
+      tabUrl,
+      tabTitle,
+    });
+    return;
+  }
+
+  // ---- Toggle intention picker on a RIGHT-column saved tab ----
+  if (action === 'toggle-intention-picker') {
+    e.stopPropagation();
+    const deferredId = actionEl.dataset.deferredId;
+    if (!deferredId) return;
+
+    await showGlobalPicker(actionEl, {
+      mode: 'saved-tab',     // re-tagging an already-saved tab
+      deferredId,
+    });
+    return;
+  }
+
+  // ---- Pick an intention from the global picker ----
+  if (action === 'pick-intention') {
+    e.stopPropagation();
+    const picker = document.getElementById('globalIntentionPicker');
+    const intentionId = actionEl.dataset.intentionId || null;
+    const mode       = picker?.dataset.mode;
+    const tabUrl     = picker?.dataset.tabUrl;
+    const tabTitle   = picker?.dataset.tabTitle;
+    const deferredId = picker?.dataset.deferredId;
+
+    hideGlobalPicker();
+
+    if (mode === 'open-tab' && tabUrl) {
+      // Save the open tab with the chosen intention, then close it
+      await saveTabForLater({ url: tabUrl, title: tabTitle }, intentionId);
+      const allTabs = await chrome.tabs.query({});
+      const match = allTabs.find(t => t.url === tabUrl);
+      if (match) await chrome.tabs.remove(match.id);
+      await fetchOpenTabs();
+
+      // Animate chip out
+      const chip = Array.from(document.querySelectorAll('.page-chip[data-tab-url]')).find(el => el.dataset.tabUrl === tabUrl);
+      if (chip) {
+        const rect = chip.getBoundingClientRect();
+        shootConfetti(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        chip.style.transition = 'opacity 0.2s, transform 0.2s';
+        chip.style.opacity = '0';
+        chip.style.transform = 'scale(0.8)';
+        setTimeout(() => {
+          chip.remove();
+          document.querySelectorAll('.mission-card').forEach(c => {
+            if (c.querySelectorAll('.page-chip[data-action="focus-tab"]').length === 0) {
+              animateCardOut(c);
+            }
+          });
+        }, 200);
+      }
+
+      playCloseSound();
+      const statTabs = document.getElementById('statTabs');
+      if (statTabs) statTabs.textContent = openTabs.length;
+      await renderDeferredColumn();
+
+      const intention = (await getIntentions()).find(i => i.id === intentionId);
+      showToast(intention ? `Saved to ${intention.emoji} ${intention.label}` : 'Saved for later');
+    } else if (mode === 'saved-tab' && deferredId) {
+      // Re-tag an existing saved tab
+      await setTabIntention(deferredId, intentionId);
+      await renderDeferredColumn();
+      showToast(intentionId ? 'Category updated' : 'Category removed');
+    }
+    return;
+  }
+
+  // ---- Add new intention from inline picker input ----
+  if (action === 'picker-add-intention') {
+    e.stopPropagation();
+    const emojiInput = document.getElementById('globalPickerNewEmoji');
+    const labelInput = document.getElementById('globalPickerNewLabel');
+    const emoji = (emojiInput?.value || '📌').trim();
+    const label = (labelInput?.value || '').trim();
+    if (!label) { showToast('Enter a tag name'); return; }
+
+    const intentions = await addIntention({ label, emoji });
+    if (emojiInput) emojiInput.value = '';
+    if (labelInput) labelInput.value = '';
+
+    // Re-render picker options with the new tag
+    const picker = document.getElementById('globalIntentionPicker');
+    if (picker) {
+      await populateGlobalPickerOptions(picker.dataset.mode, picker.dataset.deferredId);
+    }
+    showToast(`Added "${emoji} ${label}"`);
+    return;
+  }
+
+  // ---- Open intention settings modal ----
+  if (action === 'open-intention-settings') {
+    const modal = document.getElementById('intentionModal');
+    if (modal) {
+      modal.style.display = 'flex';
+      await renderIntentionSettings();
+    }
+    return;
+  }
+
+  // ---- Close intention settings modal ----
+  if (action === 'close-intention-modal') {
+    const modal = document.getElementById('intentionModal');
+    if (modal) modal.style.display = 'none';
+    await renderDeferredColumn(); // refresh after edits
+    return;
+  }
+
+  // ---- Add a new intention ----
+  if (action === 'add-intention') {
+    const emojiInput = document.getElementById('newIntentionEmoji');
+    const labelInput = document.getElementById('newIntentionLabel');
+    const emoji = (emojiInput?.value || '📌').trim();
+    const label = (labelInput?.value || '').trim();
+    if (!label) { showToast('Please enter a name'); return; }
+
+    await addIntention({ label, emoji });
+    if (emojiInput) emojiInput.value = '';
+    if (labelInput) labelInput.value = '';
+    await renderIntentionSettings();
+    showToast(`Added "${label}"`);
+    return;
+  }
+
+  // ---- Remove an intention ----
+  if (action === 'remove-intention') {
+    const id = actionEl.dataset.intentionId;
+    if (!id) return;
+    await removeIntention(id);
+    await renderIntentionSettings();
+    showToast('Category removed');
+    return;
+  }
+
   // ---- Close ALL open tabs ----
   if (action === 'close-all-open-tabs') {
     const allUrls = openTabs
@@ -1445,6 +2086,79 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ---- Open tabs toggle — expand/collapse ----
+document.addEventListener('click', (e) => {
+  const toggle = e.target.closest('#openTabsToggle');
+  if (!toggle) return;
+
+  toggle.classList.toggle('open');
+  const body = document.getElementById('openTabsBody');
+  if (body) {
+    body.style.display = body.style.display === 'none' ? 'block' : 'none';
+  }
+});
+
+// ---- Close global intention picker when clicking outside ----
+document.addEventListener('click', (e) => {
+  const picker = document.getElementById('globalIntentionPicker');
+  if (!picker || picker.style.display === 'none') return;
+  // Don't close if clicking inside the picker or on a trigger button
+  if (e.target.closest('#globalIntentionPicker')) return;
+  if (e.target.closest('[data-action="open-chip-intention-picker"]')) return;
+  if (e.target.closest('[data-action="toggle-intention-picker"]')) return;
+  hideGlobalPicker();
+});
+
+// ---- Close modal on overlay click ----
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('modal-overlay')) {
+    e.target.style.display = 'none';
+    renderDeferredColumn();
+  }
+});
+
+/**
+ * renderIntentionSettings()
+ *
+ * Renders the editable list of intentions inside the settings modal.
+ */
+async function renderIntentionSettings() {
+  const listEl = document.getElementById('intentionListEdit');
+  if (!listEl) return;
+
+  const intentions = await getIntentions();
+
+  if (intentions.length === 0) {
+    listEl.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px 0">No categories yet. Add one below.</div>';
+    return;
+  }
+
+  listEl.innerHTML = intentions.map(i => `
+    <div class="intention-edit-row">
+      <span class="intention-edit-emoji">${i.emoji}</span>
+      <span class="intention-edit-label">${i.label}</span>
+      <button class="deferred-dismiss" data-action="remove-intention" data-intention-id="${i.id}" title="Remove">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+  `).join('');
+}
+
+// ---- Enter key in picker's new-tag input triggers add ----
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.id === 'globalPickerNewLabel') {
+    e.preventDefault();
+    const addBtn = document.querySelector('[data-action="picker-add-intention"]');
+    if (addBtn) addBtn.click();
+  }
+  // Escape closes picker
+  if (e.key === 'Escape') {
+    hideGlobalPicker();
+    const modal = document.getElementById('intentionModal');
+    if (modal && modal.style.display !== 'none') modal.style.display = 'none';
+  }
+});
+
 // ---- Archive search — filter archived items as user types ----
 document.addEventListener('input', async (e) => {
   if (e.target.id !== 'archiveSearch') return;
@@ -1472,6 +2186,569 @@ document.addEventListener('input', async (e) => {
       || '<div style="font-size:12px;color:var(--muted);padding:8px 0">No results</div>';
   } catch (err) {
     console.warn('[tab-out] Archive search failed:', err);
+  }
+});
+
+
+/* ----------------------------------------------------------------
+   CARD EDITOR — Markdown editor with live preview
+   ---------------------------------------------------------------- */
+
+let editorCardId = null;
+let editorAutoSaveTimer = null;
+
+/**
+ * openEditor(cardId)
+ *
+ * Opens the WYSIWYG editor for a saved card.
+ */
+async function openEditor(cardId) {
+  const { deferred = [] } = await chrome.storage.local.get('deferred');
+  const card = deferred.find(t => t.id === cardId);
+  if (!card) return;
+
+  editorCardId = cardId;
+
+  const overlay     = document.getElementById('editorOverlay');
+  const titleEl     = document.getElementById('editorTitle');
+  const urlEl       = document.getElementById('editorUrl');
+  const faviconEl   = document.getElementById('editorFavicon');
+  const domainEl    = document.getElementById('editorDomain');
+  const agoEl       = document.getElementById('editorAgo');
+  const intentionEl = document.getElementById('editorIntention');
+  const contentEl   = document.getElementById('editorContent');
+  const saveStatus  = document.getElementById('editorSaveStatus');
+
+  // Title
+  titleEl.textContent = card.actionStep || card.title || '';
+
+  // Intention badge
+  const intentions = await getIntentions();
+  const intention = intentions.find(i => i.id === card.intentionId);
+  intentionEl.textContent = intention ? `${intention.emoji} ${intention.label}` : '';
+  intentionEl.style.display = intention ? 'inline-block' : 'none';
+
+  // URL + favicon
+  let domain = '';
+  if (card.url) {
+    try { domain = new URL(card.url).hostname.replace(/^www\./, ''); } catch {}
+    urlEl.textContent = domain || card.url;
+    urlEl.href = card.url;
+    urlEl.style.display = 'inline';
+    faviconEl.src = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+    faviconEl.style.display = domain ? 'inline' : 'none';
+    domainEl.textContent = domain;
+  } else {
+    urlEl.style.display = 'none';
+    faviconEl.style.display = 'none';
+    domainEl.textContent = '';
+  }
+  agoEl.textContent = timeAgo(card.savedAt);
+  saveStatus.textContent = '';
+
+  // Build HTML content — screenshot first, then notes
+  let html = '';
+  if (card.screenshot) {
+    html += `<img src="${card.screenshot}" alt="screenshot"><br>`;
+  }
+  if (card.notes) {
+    // If notes look like HTML (from previous WYSIWYG save), use directly
+    if (card.notes.trim().startsWith('<')) {
+      html += card.notes;
+    } else {
+      // Legacy markdown → convert to HTML
+      html += marked.parse(card.notes, { breaks: true, gfm: true });
+    }
+  }
+  contentEl.innerHTML = html;
+
+  // Enable checkboxes
+  contentEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.removeAttribute('disabled');
+  });
+
+  overlay.style.display = 'flex';
+  setTimeout(() => contentEl.focus(), 100);
+}
+
+async function closeEditor() {
+  await saveEditorNow();
+  document.getElementById('editorOverlay').style.display = 'none';
+  editorCardId = null;
+  if (editorAutoSaveTimer) clearTimeout(editorAutoSaveTimer);
+  await renderVisualCards();
+}
+
+async function saveEditorNow() {
+  if (!editorCardId) return;
+  const { deferred = [] } = await chrome.storage.local.get('deferred');
+  const card = deferred.find(t => t.id === editorCardId);
+  if (!card) return;
+
+  const contentEl = document.getElementById('editorContent');
+  const titleEl   = document.getElementById('editorTitle');
+
+  // Store HTML content (strip the screenshot img — it's stored separately)
+  let html = contentEl.innerHTML;
+  // Remove the leading screenshot img if it matches the stored one
+  if (card.screenshot) {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    const firstImg = div.querySelector('img');
+    if (firstImg && firstImg.src === card.screenshot) {
+      firstImg.remove();
+      // Also remove trailing <br> after screenshot
+      if (div.firstChild && div.firstChild.nodeName === 'BR') div.firstChild.remove();
+    }
+    html = div.innerHTML;
+  }
+  card.notes = html;
+
+  const newTitle = titleEl.textContent.trim();
+  if (newTitle) {
+    card.actionStep = newTitle;
+    card.title = newTitle;
+  }
+
+  await chrome.storage.local.set({ deferred });
+
+  const saveStatus = document.getElementById('editorSaveStatus');
+  if (saveStatus) {
+    saveStatus.textContent = 'Saved';
+    setTimeout(() => { if (saveStatus) saveStatus.textContent = ''; }, 1500);
+  }
+}
+
+function scheduleAutoSave() {
+  if (editorAutoSaveTimer) clearTimeout(editorAutoSaveTimer);
+  editorAutoSaveTimer = setTimeout(saveEditorNow, 1000);
+}
+
+// ── Editor event listeners ──
+
+// Close
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#editorClose')) { closeEditor(); return; }
+  if (e.target.id === 'editorOverlay') { closeEditor(); return; }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && editorCardId) {
+    const pasteModal = document.getElementById('pasteCardModal');
+    const intentionModal = document.getElementById('intentionModal');
+    if (pasteModal?.style.display !== 'none' && pasteModal?.style.display) return;
+    if (intentionModal?.style.display !== 'none' && intentionModal?.style.display) return;
+    closeEditor();
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key === 's' && editorCardId) {
+    e.preventDefault();
+    saveEditorNow();
+  }
+});
+
+// Auto-save on content changes
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'editorContent' || e.target.id === 'editorTitle') {
+    scheduleAutoSave();
+  }
+});
+
+// Keyboard shortcuts inside WYSIWYG
+document.addEventListener('keydown', (e) => {
+  const contentEl = document.getElementById('editorContent');
+  if (!contentEl || document.activeElement !== contentEl) return;
+
+  // Cmd+B → bold
+  if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+    e.preventDefault();
+    document.execCommand('bold');
+    scheduleAutoSave();
+    return;
+  }
+  // Cmd+I → italic
+  if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
+    e.preventDefault();
+    document.execCommand('italic');
+    scheduleAutoSave();
+    return;
+  }
+  // Cmd+K → insert link
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    const url = prompt('URL:');
+    if (url) document.execCommand('createLink', false, url);
+    scheduleAutoSave();
+    return;
+  }
+});
+
+/**
+ * Markdown-style shortcuts: detect pattern after Space key press.
+ * We listen on keydown for Space, check what's before the cursor,
+ * and convert if it matches a markdown pattern.
+ */
+document.addEventListener('keydown', (e) => {
+  const contentEl = document.getElementById('editorContent');
+  if (!contentEl || document.activeElement !== contentEl) return;
+  if (e.key !== ' ') return;
+
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const node = sel.anchorNode;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return;
+
+  // Get text before cursor in this text node
+  const textBefore = node.textContent.slice(0, sel.anchorOffset);
+
+  // Find the block-level parent (div, p, or the contenteditable itself)
+  const getBlock = () => {
+    let el = node.parentElement;
+    while (el && el !== contentEl && !['DIV','P','LI'].includes(el.tagName)) {
+      el = el.parentElement;
+    }
+    return el === contentEl ? null : el;
+  };
+
+  const replaceBlock = (newEl) => {
+    e.preventDefault();
+    const block = getBlock();
+    if (block) {
+      block.replaceWith(newEl);
+    } else {
+      node.remove();
+      contentEl.appendChild(newEl);
+    }
+    const range = document.createRange();
+    range.setStart(newEl.lastChild || newEl, newEl.lastChild ? 0 : 0);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    scheduleAutoSave();
+  };
+
+  // `## ` → H2
+  if (textBefore === '##') {
+    const h2 = document.createElement('h2');
+    h2.appendChild(document.createElement('br'));
+    replaceBlock(h2);
+    return;
+  }
+
+  // `# ` → H1
+  if (textBefore === '#') {
+    const h1 = document.createElement('h1');
+    h1.appendChild(document.createElement('br'));
+    replaceBlock(h1);
+    return;
+  }
+
+  // `### ` → H3
+  if (textBefore === '###') {
+    const h3 = document.createElement('h3');
+    h3.appendChild(document.createElement('br'));
+    replaceBlock(h3);
+    return;
+  }
+
+  // `- ` → bullet list
+  if (textBefore === '-') {
+    e.preventDefault();
+    const block = getBlock();
+    const ul = document.createElement('ul');
+    const li = document.createElement('li');
+    li.appendChild(document.createElement('br'));
+    ul.appendChild(li);
+    if (block) { block.replaceWith(ul); } else { node.remove(); contentEl.appendChild(ul); }
+    const range = document.createRange();
+    range.setStart(li, 0);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    scheduleAutoSave();
+    return;
+  }
+
+  // `[]` or `[ ]` → checkbox
+  if (textBefore === '[]' || textBefore === '[ ]') {
+    e.preventDefault();
+    const block = getBlock();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'checkbox-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    const span = document.createElement('span');
+    span.appendChild(document.createElement('br'));
+    wrapper.appendChild(cb);
+    wrapper.appendChild(span);
+    if (block) { block.replaceWith(wrapper); } else { node.remove(); contentEl.appendChild(wrapper); }
+    const range = document.createRange();
+    range.setStart(span, 0);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    scheduleAutoSave();
+    return;
+  }
+
+  // `> ` → blockquote
+  if (textBefore === '>') {
+    const bq = document.createElement('blockquote');
+    bq.appendChild(document.createElement('br'));
+    replaceBlock(bq);
+    return;
+  }
+
+  // `1.` → ordered list
+  if (textBefore === '1.') {
+    e.preventDefault();
+    const block = getBlock();
+    const ol = document.createElement('ol');
+    const li = document.createElement('li');
+    li.appendChild(document.createElement('br'));
+    ol.appendChild(li);
+    if (block) { block.replaceWith(ol); } else { node.remove(); contentEl.appendChild(ol); }
+    const range = document.createRange();
+    range.setStart(li, 0);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    scheduleAutoSave();
+    return;
+  }
+});
+
+// `---` + Enter → hr
+document.addEventListener('keydown', (e) => {
+  const contentEl = document.getElementById('editorContent');
+  if (!contentEl || document.activeElement !== contentEl) return;
+  if (e.key !== 'Enter') return;
+
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return;
+  const node = sel.anchorNode;
+  if (!node) return;
+
+  const text = (node.nodeType === Node.TEXT_NODE) ? node.textContent.trim() : '';
+  if (text === '---' || text === '***') {
+    e.preventDefault();
+    const block = node.parentElement === contentEl ? node : node.parentElement;
+    const hr = document.createElement('hr');
+    const p = document.createElement('div');
+    p.appendChild(document.createElement('br'));
+    block.replaceWith ? block.replaceWith(hr) : contentEl.appendChild(hr);
+    hr.after(p);
+    const range = document.createRange();
+    range.setStart(p, 0);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    scheduleAutoSave();
+  }
+});
+
+// Paste images into WYSIWYG
+document.addEventListener('paste', (e) => {
+  const contentEl = document.getElementById('editorContent');
+  if (!contentEl || !contentEl.contains(document.activeElement) && document.activeElement !== contentEl) return;
+
+  const items = e.clipboardData?.items;
+  if (!items) return;
+
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      const blob = item.getAsFile();
+      if (!blob) return;
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const img = document.createElement('img');
+        img.src = reader.result;
+        img.alt = 'image';
+
+        const sel = window.getSelection();
+        if (sel.rangeCount) {
+          const range = sel.getRangeAt(0);
+          range.deleteContents();
+          range.insertNode(img);
+          range.setStartAfter(img);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } else {
+          contentEl.appendChild(img);
+        }
+        scheduleAutoSave();
+      };
+      reader.readAsDataURL(blob);
+      return;
+    }
+  }
+});
+
+
+/* ----------------------------------------------------------------
+   PASTE IMAGE → NEW CARD
+   Cmd+V with an image in clipboard opens the paste-card modal.
+   ---------------------------------------------------------------- */
+
+let pasteImageData = null;
+let pasteSelectedIntention = null;
+
+document.addEventListener('paste', async (e) => {
+  // Only handle if no input/textarea is focused
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+  const items = e.clipboardData?.items;
+  if (!items) return;
+
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      const blob = item.getAsFile();
+      if (!blob) return;
+
+      // Convert to base64
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        pasteImageData = reader.result;
+        pasteSelectedIntention = null;
+        await openPasteModal(pasteImageData);
+      };
+      reader.readAsDataURL(blob);
+      return;
+    }
+  }
+});
+
+async function openPasteModal(imageDataUrl) {
+  const modal = document.getElementById('pasteCardModal');
+  const img   = document.getElementById('pastePreviewImg');
+  const input = document.getElementById('pasteActionStep');
+  const urlInput = document.getElementById('pasteUrl');
+  if (!modal) return;
+
+  img.src = imageDataUrl;
+  input.value = '';
+  urlInput.value = '';
+  pasteSelectedIntention = null;
+
+  // Render intention chips
+  const intentions = await getIntentions();
+  const container = document.getElementById('pasteIntentions');
+  container.innerHTML = intentions.map(i =>
+    `<button class="paste-intention-chip" data-intention-id="${i.id}">${i.emoji} ${i.label}</button>`
+  ).join('') +
+  `<button class="paste-intention-chip paste-intention-none active" data-intention-id="">No intention</button>`;
+
+  modal.style.display = 'flex';
+  setTimeout(() => input.focus(), 50);
+}
+
+// Intention chip clicks inside paste modal
+document.addEventListener('click', (e) => {
+  const chip = e.target.closest('.paste-intention-chip');
+  if (!chip) return;
+  e.stopPropagation();
+
+  // Toggle active
+  document.querySelectorAll('.paste-intention-chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  pasteSelectedIntention = chip.dataset.intentionId || null;
+});
+
+// Close paste modal
+document.addEventListener('click', async (e) => {
+  if (e.target.closest('[data-action="close-paste-modal"]')) {
+    document.getElementById('pasteCardModal').style.display = 'none';
+    pasteImageData = null;
+    return;
+  }
+  if (e.target.id === 'pasteCardModal') {
+    e.target.style.display = 'none';
+    pasteImageData = null;
+    return;
+  }
+  if (e.target.id === 'pasteRemoveImg') {
+    pasteImageData = null;
+    document.getElementById('pastePreviewImg').src = '';
+    document.querySelector('.paste-preview').style.display = 'none';
+    return;
+  }
+});
+
+// Save paste card
+document.addEventListener('click', async (e) => {
+  if (e.target.id !== 'pasteSaveBtn') return;
+
+  const actionStep = document.getElementById('pasteActionStep').value.trim();
+  const url = document.getElementById('pasteUrl').value.trim();
+
+  if (!pasteImageData && !actionStep) {
+    showToast('Add an image or action step');
+    return;
+  }
+
+  const { deferred = [] } = await chrome.storage.local.get('deferred');
+  deferred.push({
+    id:           Date.now().toString(),
+    url:          url || '',
+    title:        actionStep || 'Pasted card',
+    actionStep:   actionStep,
+    screenshot:   pasteImageData,
+    savedAt:      new Date().toISOString(),
+    completed:    false,
+    dismissed:    false,
+    intentionId:  pasteSelectedIntention || null,
+  });
+  await chrome.storage.local.set({ deferred });
+
+  // Close modal and refresh
+  document.getElementById('pasteCardModal').style.display = 'none';
+  pasteImageData = null;
+  playCloseSound();
+  showToast('Card created');
+  await renderVisualCards();
+  await renderIntentionNav();
+});
+
+// Add new intention from paste modal
+document.addEventListener('click', async (e) => {
+  if (e.target.id !== 'pasteAddIntentionBtn') return;
+  const emojiInput = document.getElementById('pasteNewEmoji');
+  const labelInput = document.getElementById('pasteNewLabel');
+  const emoji = (emojiInput?.value || '📌').trim();
+  const label = (labelInput?.value || '').trim();
+  if (!label) { showToast('Enter a name'); return; }
+
+  const result = await addIntention({ label, emoji });
+  if (emojiInput) emojiInput.value = '';
+  if (labelInput) labelInput.value = '';
+
+  // Re-render intention chips and auto-select the new one
+  const intentions = await getIntentions();
+  const container = document.getElementById('pasteIntentions');
+  container.innerHTML = intentions.map(i =>
+    `<button class="paste-intention-chip${i.id === result[result.length - 1].id ? ' active' : ''}" data-intention-id="${i.id}">${i.emoji} ${i.label}</button>`
+  ).join('') +
+  `<button class="paste-intention-chip paste-intention-none" data-intention-id="">No intention</button>`;
+  pasteSelectedIntention = result[result.length - 1].id;
+  showToast(`Added "${emoji} ${label}"`);
+});
+
+// Enter in paste modal new-intention input
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.id === 'pasteNewLabel') {
+    e.preventDefault();
+    document.getElementById('pasteAddIntentionBtn')?.click();
+    return;
+  }
+});
+
+// Enter in action step input triggers save
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.id === 'pasteActionStep') {
+    const modal = document.getElementById('pasteCardModal');
+    if (modal && modal.style.display !== 'none') {
+      e.preventDefault();
+      document.getElementById('pasteSaveBtn').click();
+    }
   }
 });
 

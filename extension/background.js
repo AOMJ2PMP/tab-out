@@ -87,6 +87,97 @@ chrome.tabs.onUpdated.addListener(() => {
   updateBadge();
 });
 
+// ─── Region Screenshot Capture ───────────────────────────────────────────────
+
+/**
+ * Listens for messages from capture.js (content script) and popup.js.
+ *
+ * Flow:
+ * 1. Popup sends 'start-capture' → we inject capture.js into the active tab
+ * 2. User drags a region → capture.js sends 'region-selected' with rect
+ * 3. We captureVisibleTab, crop to rect using OffscreenCanvas, send back base64
+ */
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+
+  // ── Step 1: Popup asks to start capture ──
+  if (msg.action === 'start-capture') {
+    (async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab) return;
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['capture.js'],
+        });
+      } catch (err) {
+        console.warn('[tab-out] Could not inject capture script:', err);
+      }
+    })();
+    return false;
+  }
+
+  // ── Step 2: Content script reports selected region ──
+  if (msg.action === 'region-selected' && msg.rect) {
+    (async () => {
+      try {
+        const tabId = sender.tab?.id;
+        // Capture the visible area of the tab
+        const dataUrl = await chrome.tabs.captureVisibleTab(null, {
+          format: 'png',
+        });
+
+        // Crop to the selected region using OffscreenCanvas
+        const resp = await fetch(dataUrl);
+        const blob = await resp.blob();
+        const bmp  = await createImageBitmap(blob);
+
+        const r = msg.rect;
+        // Clamp to image bounds
+        const sx = Math.max(0, Math.min(r.x, bmp.width));
+        const sy = Math.max(0, Math.min(r.y, bmp.height));
+        const sw = Math.min(r.width, bmp.width - sx);
+        const sh = Math.min(r.height, bmp.height - sy);
+
+        const canvas = new OffscreenCanvas(sw, sh);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, sw, sh);
+
+        const croppedBlob = await canvas.convertToBlob({ type: 'image/png' });
+
+        // Convert blob to data URL
+        const croppedDataUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.readAsDataURL(croppedBlob);
+        });
+
+        // Store the screenshot so the popup can retrieve it on open
+        await chrome.storage.local.set({ __pendingScreenshot: croppedDataUrl });
+
+        // Auto-reopen the popup so user can fill in action step + intention
+        try {
+          await chrome.action.openPopup();
+        } catch {
+          // openPopup may fail if not supported or user gesture required
+          // User can still click the icon manually — screenshot is in storage
+        }
+
+      } catch (err) {
+        console.error('[tab-out] Screenshot capture failed:', err);
+      }
+    })();
+    return false;
+  }
+
+  // ── User cancelled capture ──
+  if (msg.action === 'capture-cancelled') {
+    chrome.storage.local.remove('__pendingScreenshot');
+    return false;
+  }
+
+});
+
+
 // ─── Initial run ─────────────────────────────────────────────────────────────
 
 // Run once immediately when the service worker first loads

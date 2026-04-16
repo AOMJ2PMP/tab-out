@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tab Out</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=SN+Pro:wght@400;500;600&family=Fraunces:opsz,wght@9..144,300;9..144,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #1a2420;
+      --paper: #F4FBF8;
+      --warm-gray: #dce8e3;
+      --muted: #8a9e96;
+      --accent-amber: #c8713a;
+      --accent-sage: #4a8a6a;
+      --card-bg: #fbfefc;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'SN Pro', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      width: 320px;
+      min-height: 100px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Header: current tab info ── */
+    .popup-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--warm-gray);
+    }
+
+    .tab-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .tab-favicon {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    .tab-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+
+    /* ── Step 1: Capture screen ── */
+    .capture-section {
+      padding: 12px 16px;
+    }
+
+    .capture-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 10px 16px;
+      border: 1.5px dashed var(--warm-gray);
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+      font-family: 'SN Pro', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      transition: all 0.15s;
+    }
+
+    .capture-btn:hover {
+      border-color: var(--accent-amber);
+      color: var(--accent-amber);
+      background: rgba(200, 113, 58, 0.04);
+    }
+
+    .capture-btn svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Screenshot preview */
+    .screenshot-preview {
+      display: none;
+      margin-top: 8px;
+      position: relative;
+    }
+
+    .screenshot-preview img {
+      width: 100%;
+      border-radius: 6px;
+      border: 1px solid var(--warm-gray);
+    }
+
+    .screenshot-remove {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: none;
+      background: rgba(26, 22, 19, 0.7);
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .screenshot-remove:hover {
+      background: rgba(179, 90, 90, 0.9);
+    }
+
+    /* ── Step 2: Actionable step input ── */
+    .action-step-section {
+      padding: 0 16px 10px;
+    }
+
+    .action-step-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .action-step-input {
+      width: 100%;
+      font-family: 'SN Pro', sans-serif;
+      font-size: 13px;
+      padding: 8px 12px;
+      border: 1px solid var(--warm-gray);
+      border-radius: 6px;
+      background: var(--card-bg);
+      color: var(--ink);
+      outline: none;
+      resize: none;
+      transition: border-color 0.15s;
+    }
+
+    .action-step-input:focus {
+      border-color: var(--accent-amber);
+    }
+
+    .action-step-input::placeholder {
+      color: var(--muted);
+    }
+
+    /* ── Step 3: Intention picker ── */
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      padding: 6px 16px 4px;
+    }
+
+    .intentions-list {
+      padding: 0 8px 4px;
+    }
+
+    .intention-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: 'SN Pro', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--ink);
+      transition: background 0.15s;
+    }
+
+    .intention-btn:hover {
+      background: var(--warm-gray);
+    }
+
+    .intention-btn .emoji {
+      font-size: 16px;
+      width: 22px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--warm-gray);
+      margin: 2px 16px;
+    }
+
+    .save-plain-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: calc(100% - 16px);
+      margin: 4px 8px;
+      padding: 8px 12px;
+      border: none;
+      background: transparent;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: 'SN Pro', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      transition: background 0.15s;
+    }
+
+    .save-plain-btn:hover {
+      background: var(--warm-gray);
+      color: var(--ink);
+    }
+
+    .add-tag-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px 12px;
+      border-top: 1px solid var(--warm-gray);
+      margin-top: 4px;
+    }
+
+    .add-tag-row input {
+      font-family: 'SN Pro', sans-serif;
+      font-size: 13px;
+      border: 1px solid var(--warm-gray);
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: var(--card-bg);
+      color: var(--ink);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .add-tag-row input:focus {
+      border-color: var(--accent-amber);
+    }
+
+    .emoji-input { width: 40px; text-align: center; }
+    .name-input { flex: 1; min-width: 0; }
+
+    .add-tag-btn {
+      padding: 6px 10px;
+      border: none;
+      background: var(--accent-sage);
+      color: #fff;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: 'SN Pro', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      transition: opacity 0.15s;
+    }
+
+    .add-tag-btn:hover { opacity: 0.85; }
+    .add-tag-btn:disabled { opacity: 0.4; cursor: default; }
+  </style>
+</head>
+<body>
+
+  <!-- Header: current tab -->
+  <div class="popup-header">
+    <div class="tab-info">
+      <img class="tab-favicon" id="tab-favicon" src="" alt="">
+      <span class="tab-title" id="tab-title">Loading...</span>
+    </div>
+  </div>
+
+  <!-- Step 1: Screenshot capture -->
+  <div class="capture-section">
+    <button class="capture-btn" id="capture-btn">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" />
+      </svg>
+      Capture region
+    </button>
+    <div class="screenshot-preview" id="screenshot-preview">
+      <img id="screenshot-img" src="" alt="Screenshot">
+      <button class="screenshot-remove" id="screenshot-remove" title="Remove screenshot">✕</button>
+    </div>
+  </div>
+
+  <!-- Step 2: Actionable step -->
+  <div class="action-step-section">
+    <div class="action-step-label">What's the action?</div>
+    <input type="text" class="action-step-input" id="action-step" placeholder="e.g. Follow this Framer motion tutorial">
+  </div>
+
+  <!-- Step 3: Pick intention and save -->
+  <div class="section-label">Save to</div>
+  <div class="intentions-list" id="intentions-list"></div>
+
+  <div class="divider"></div>
+
+  <button class="save-plain-btn" id="save-plain-btn">
+    <span style="font-size:16px;width:22px;text-align:center">📥</span>
+    <span>Save without intention</span>
+  </button>
+
+  <!-- Add new intention inline -->
+  <div class="add-tag-row">
+    <input type="text" class="emoji-input" id="new-emoji" placeholder="📌" maxlength="8">
+    <input type="text" class="name-input" id="new-name" placeholder="New intention...">
+    <button class="add-tag-btn" id="add-tag-btn" disabled>Add</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
