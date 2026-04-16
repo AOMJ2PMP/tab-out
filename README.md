@@ -10,7 +10,8 @@ Next Up 把你的新标签页变成一个个人行动面板。从任意网页截
 
 ---
 
-<!-- 截图：在 GitHub 网页端编辑此文件，直接拖拽图片上传即可自动生成链接 -->
+<img width="2900" height="1820" alt="Clipboard_Screenshot_1776342796" src="https://github.com/user-attachments/assets/ab3af51b-6c3e-4aac-826e-dda776a5452f" />
+
 
 ---
 
@@ -43,6 +44,9 @@ Next Up 把你的新标签页变成一个个人行动面板。从任意网页截
 - **键盘快捷键** — Cmd+B 加粗、Cmd+I 斜体、Cmd+K 插入链接
 - **粘贴图片** — 在编辑器内 Cmd+V 直接嵌入截图
 - **自动保存** — 输入即保存，无需手动操作
+
+<img width="2880" height="1560" alt="Clipboard_Screenshot_1776342824" src="https://github.com/user-attachments/assets/a08012c2-e030-4368-a2c4-3f7a8614a7f6" />
+
 
 ### 其他
 - **打开的标签页** — 可折叠区域，展示所有浏览器标签按域名分组
